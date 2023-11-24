@@ -10,7 +10,7 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <signal.h>
-
+#include <limits.h>
 #define MAX_SIZE 100
 
 
@@ -20,19 +20,21 @@ struct SharedData {
     int bestPath[MAX_SIZE];
     int bestDistance;
     int IterationsNeeded;
+    int numTimesBestPathFound;
     struct timeval timeToBestPath;
 };
 
 
 //Variaveis
 int matrix[MAX_SIZE][MAX_SIZE];
-int size , pid , i , newBestDistance , numProcesses;
+int size , pid , i , newBestDistance = INT_MAX , numProcesses;
 
 pid_t  *childPIDs;
 sem_t *mutex;
+sem_t *mutex_2;
 void *shmem ;
 struct SharedData *sharedData;
-
+int timeLimitReached = 0;
 
 //Imprimir a matrix
 void printMatrix() {
@@ -98,44 +100,63 @@ int getDistance(int path[]) {
     return totalDistance;
 }
 
+//Função para tratamento de Sinais
 void signal_handler(int signal) {
-        if (signal == SIGUSR1) {
-            for (int j = 0; j < numProcesses; j++) {
-             
+
+    //Tratamento do Sinal enviado para o Pai
+    if (signal == SIGUSR1) {
+     
+        for (int j = 0; j < numProcesses; j++) {
+            if (childPIDs[j] != getpid()) {
                 kill(childPIDs[j], SIGUSR2);
-                
             }
         }
-        else if(signal == SIGUSR2){
-            
-            sem_wait(mutex); 
-            newBestDistance = sharedData->bestDistance;
-            sem_post(mutex);
-        }
+    } else if (signal == SIGUSR2) { //Tratamento do Sinal enviado para os filhos atualizarem a sua distancia de referencia       
+        sem_wait(mutex_2);
+        newBestDistance = sharedData->bestDistance;
+        sem_post(mutex_2);
+    }
 }
 
-
+//Função para tratamento do Alarm Signal
+void alarm_handler(int signal) {
+    sem_wait(mutex);
+    timeLimitReached = 1;
+    sem_post(mutex);
+    for (int j = 0; j < numProcesses; j++) {
+        kill(childPIDs[j], SIGTERM);
+    }
+}
+//Função para tratamento do Sinal que termina os processos
+void termination_handler(int signal) {
+    exit(0);
+}
 
 int main(int argc, char *argv[]) {
-
-   signal(SIGUSR2, signal_handler);
-   signal(SIGUSR1, signal_handler);
-
+    //Validação dos argumentos passados por parametro
+    const char *filename = argv[1];
+    time_t timeLimit = atoi(argv[2]);
+    numProcesses = atoi(argv[3]);
     if (argc != 4) {
         fprintf(stderr, "Usage: %s <nome_do_ficheiro> <tempo_limite> <num_processos>\n", argv[0]);
         return 1;
     }
+    //Sinais
+   signal(SIGUSR2, signal_handler);
+   signal(SIGUSR1, signal_handler);
+   signal(SIGALRM, alarm_handler);
+   signal(SIGTERM, termination_handler);
+   alarm(timeLimit);
 
-    const char *filename = argv[1];
-    int timeLimit = atoi(argv[2]);
-    numProcesses = atoi(argv[3]);
-  
- 
-
+   //Semaphores
     sem_unlink("mutex");
+    sem_unlink("mutex2");
     mutex = sem_open("mutex", O_CREAT, 0644, 1);
+    mutex_2 = sem_open("mutex2", O_CREAT, 0644, 1);
 
+    //Obter a Matrix
     getMatrix(filename);
+    //Imprimir a Matrix
     printMatrix();
 
 
@@ -144,10 +165,10 @@ int main(int argc, char *argv[]) {
     int protection = PROT_READ | PROT_WRITE;
     int visibility = MAP_ANONYMOUS | MAP_SHARED;
 
-
     shmem = mmap(NULL , sizeMemory , protection , visibility , 0, 0);
     sharedData =  (struct SharedData *)shmem;
     
+    //Alocação dinamica de memoria para o array de PIDs
     childPIDs = malloc(numProcesses * sizeof(pid_t));
      if (childPIDs == NULL) {
         perror("Error allocating memory for childPIDs");
@@ -155,10 +176,10 @@ int main(int argc, char *argv[]) {
     }
 
     for (int i = 0; i < numProcesses; i++) {
-        int pid = fork();
+        pid = fork();
         if (pid == 0) { // Código executado pelos processos filhos
              //Variaveis
-             
+          
             int iterations = 0;
             struct timeval tvi , tvf , tv_res;
             gettimeofday(&tvi , NULL);
@@ -166,26 +187,19 @@ int main(int argc, char *argv[]) {
             // Calcular o Primeiro caminho
             /*Assumimos que o primeiro caminho é o melhor dentro do escopo daquele processo*/
             srand(time(NULL));
-            int randomInitialPath[size];
-            initializeRandomPath(randomInitialPath);
-            int newBestDistance = getDistance(randomInitialPath);
-            gettimeofday(&tvf , NULL);
-            timersub(&tvf , &tvi , &tv_res);
 
 
             time_t startTime = time(NULL); // Começar a contagem do tempo definido
-            while (1) {
+            while (!timeLimitReached) {
             
+                
                 int randomPath[size];
                 initializeRandomPath(randomPath);
                 int mutatedDistance = getDistance(randomPath);
               
-
                 if (mutatedDistance < newBestDistance) {
-                    
                     sem_wait(mutex);
                     sharedData->bestDistance = mutatedDistance;
-                    newBestDistance = mutatedDistance;
                     for (int i = 0; i < size; i++) {
                         sharedData->bestPath[i] = randomPath[i];
                     }   
@@ -193,47 +207,59 @@ int main(int argc, char *argv[]) {
                     timersub(&tvf, &tvi, &tv_res);
                     sharedData->timeToBestPath = tv_res;
                     sharedData->IterationsNeeded = iterations;
+                  
                     sem_post(mutex);
 
+                    
                     kill(getppid(), SIGUSR1);
                     pause();
                     
                 }
-                iterations++;
-
-                time_t currentTime = time(NULL);
-                if (currentTime - startTime >= timeLimit) {
-                    printf("Tempo limite excedido. A interromper interações...\n");
-                    break;
+                else if (mutatedDistance == newBestDistance){
+                    sem_wait(mutex);
+                    sharedData->numTimesBestPathFound++;
+                    sem_post(mutex);
                 }
+                iterations++;
             }
-                    exit(0);
+            exit(0);
         } else if (pid < 0) {
+            
             perror("Erro ao criar processo");
             exit(1);
         }
+        else if (pid > 0) { // Código executado pelo processo pai
         childPIDs[i] = pid;
+       
+    }
+       
     }
    for (int i = 0; i < numProcesses; i++) {
-        int pid = wait(NULL);
+        wait(NULL);
     }
 
 
-    printf("-----------------------------------\n");
-    printf("Melhor Resultado :\n");
-     printf("-----------------------------------\n");
+    printf("--------------------------------------------------------------\n");
+    printf("Melhor Resultado\n");
+     printf("-------------------------------------------------------------\n");
     printf("Melhor caminho encontrado:");
      for (int i = 0; i < size ; i++){
         printf("%d " , sharedData->bestPath[i]);
      }
     printf("\nValor do Caminho: %d" , sharedData->bestDistance );
     printf("\nIterações necessarias: %d" , sharedData->IterationsNeeded + 1 );
-    printf("\nTempo necessario: %ld ms", (long)sharedData -> timeToBestPath.tv_usec / 1000 );
-    printf("\n-----------------------------------\n");
+    printf("\nNumero de vezes econtrado: %d" , sharedData->numTimesBestPathFound + 1);
+    printf("\nTempo necessario: %ld.%06ld s", (long)sharedData->timeToBestPath.tv_sec, (long)sharedData->timeToBestPath.tv_usec);
+    printf("\n------------------------------------------------------------\n");
 
+
+    //Libertação de memoria 
     free(childPIDs);
     sem_close(mutex);
     sem_unlink("mutex");
+    sem_close(mutex_2);
+    sem_unlink("mutex2");
+    munmap(shmem, sizeMemory);
     return 0;
 }
 

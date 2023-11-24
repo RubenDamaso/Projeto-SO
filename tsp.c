@@ -9,7 +9,7 @@
 #include <sys/mman.h>
 #include <semaphore.h>
 #include <fcntl.h>
-
+#include <limits.h>
 #define MAX_SIZE 100
 
 //Variaveis
@@ -21,6 +21,7 @@ struct SharedData {
     int bestPath[MAX_SIZE];
     int bestDistance;
     int IterationsNeeded;
+    int numTimesBestPathFound;
     struct timeval timeToBestPath;
 };
 
@@ -89,19 +90,19 @@ int getDistance(int path[]) {
 
 
 int main(int argc, char *argv[]) {
-
-    
-
+    //Validação dos argumentos passados por parametro
     if (argc != 4) {
         fprintf(stderr, "Usage: %s <nome_do_ficheiro> <tempo_limite> <num_processos>\n", argv[0]);
         return 1;
     }
-
+    //Parametros passados por parametro
     const char *filename = argv[1];
     int timeLimit = atoi(argv[2]);
     int numProcesses = atoi(argv[3]);
 
+    //Obter a Matrix
     getMatrix(filename);
+    //Imprimir a Matrix
     printMatrix();
 
 
@@ -110,42 +111,37 @@ int main(int argc, char *argv[]) {
     int protection = PROT_READ | PROT_WRITE;
     int visibility = MAP_ANONYMOUS | MAP_SHARED;
 
-
     void *shmem = mmap(NULL , sizeMemory , protection , visibility , 0, 0);
     struct SharedData *sharedData =  (struct SharedData *)shmem;
     
-
+    //Criação e implementação do Semaphore
     sem_unlink("mutex");
     sem_t *mutex = sem_open("mutex", O_CREAT, 0644, 1);
 
+    //Criação de processos
     for (int i = 0; i < numProcesses; i++) {
         int pid = fork();
         if (pid == 0) { // Código executado pelos processos filhos
-             //Variaveis
+            
+            //Variaveis Locais
             int iterations = 0;
             struct timeval tvi , tvf , tv_res;
+            int newBestDistance = INT_MAX;
             gettimeofday(&tvi , NULL);
-            
-            // Calcular o Primeiro caminho
-            /*Assumimos que o primeiro caminho é o melhor dentro do escopo daquele processo*/
-            srand(time(NULL));
-            int randomInitialPath[size];
-            initializeRandomPath(randomInitialPath);
-            int newBestDistance = getDistance(randomInitialPath);
-            gettimeofday(&tvf , NULL);
-            timersub(&tvf , &tvi , &tv_res);
 
 
             time_t startTime = time(NULL); // Começar a contagem do tempo definido
             while (1) {
-            
-                int randomPath[size];
-                initializeRandomPath(randomPath);
-                int mutatedDistance = getDistance(randomPath);
+              
+                int randomPath[size];  //Começar um novo caminho aleatorio
+                initializeRandomPath(randomPath);  
+                int mutatedDistance = getDistance(randomPath);//Obter o seu valor de percorrer esse caminho
                 
-
+                //Caso este seja menor em distancia que o melhor caminho  anterior então dentro daquele escopo é o melhor
                 if (mutatedDistance < newBestDistance) {
+                    //Semaphore para controlo da entrada na memoria Partilhada
                     sem_wait(mutex);
+                    //Atualização dos valores em memoria Partihada
                     sharedData->bestDistance = mutatedDistance;
                     newBestDistance = mutatedDistance;
                     for (int i = 0; i < size; i++) {
@@ -157,28 +153,21 @@ int main(int argc, char *argv[]) {
                     sharedData->IterationsNeeded = iterations;
                     sem_post(mutex);
                 }
-                else{
+                //Caso a distancia percorrida do novo caminho seja igual ao melhor então vamos incrementar na memoria partilhada
+                else if(mutatedDistance == newBestDistance){
                     sem_wait(mutex);
-                    sharedData->bestDistance = newBestDistance;
-                    for (int i = 0; i < size; i++) {
-                        sharedData->bestPath[i] = randomInitialPath[i];
-                    }   
-                    gettimeofday(&tvf , NULL);
-                    timersub(&tvf, &tvi, &tv_res);
-                    sharedData->timeToBestPath = tv_res;
-                    sharedData->IterationsNeeded = iterations;
+                    sharedData->numTimesBestPathFound++;
                     sem_post(mutex);
                 }
-            iterations++;
-            
-
+                  
+                iterations++;
                 time_t currentTime = time(NULL);
                 if (currentTime - startTime >= timeLimit) {
                     printf("Tempo limite excedido. A interromper interações...\n");
                     break;
                 }
             }
-                    exit(0);
+            exit(0);
         } else if (pid < 0) {
             perror("Erro ao criar processo");
             exit(1);
@@ -197,7 +186,8 @@ int main(int argc, char *argv[]) {
      }
     printf("\nValor do Caminho: %d" , sharedData->bestDistance );
     printf("\nIterações necessarias: %d" , sharedData->IterationsNeeded + 1 );
-    printf("\nTempo necessario: %ld ms", (long)sharedData -> timeToBestPath.tv_usec / 1000 );
+    printf("\nNumero de vezes econtrado: %d" , sharedData->numTimesBestPathFound + 1);
+    printf("\nTempo necessario: %ld.%06ld s", (long)sharedData->timeToBestPath.tv_sec, (long)sharedData->timeToBestPath.tv_usec);
     printf("\n-----------------------------------\n");
     return 0;
 }
