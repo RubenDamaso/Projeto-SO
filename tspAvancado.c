@@ -21,6 +21,7 @@ struct SharedData {
     int bestDistance;
     int IterationsNeeded;
     int numTimesBestPathFound;
+    int TotalNumberOfIterations;
     struct timeval timeToBestPath;
 };
 
@@ -181,18 +182,15 @@ int main(int argc, char *argv[]) {
              //Variaveis
           
             int iterations = 0;
+            
             struct timeval tvi , tvf , tv_res;
             gettimeofday(&tvi , NULL);
             
-            // Calcular o Primeiro caminho
-            /*Assumimos que o primeiro caminho é o melhor dentro do escopo daquele processo*/
             srand(time(NULL));
-
 
             time_t startTime = time(NULL); // Começar a contagem do tempo definido
             while (!timeLimitReached) {
-            
-                
+               
                 int randomPath[size];
                 initializeRandomPath(randomPath);
                 int mutatedDistance = getDistance(randomPath);
@@ -206,8 +204,8 @@ int main(int argc, char *argv[]) {
                     gettimeofday(&tvf , NULL);
                     timersub(&tvf, &tvi, &tv_res);
                     sharedData->timeToBestPath = tv_res;
-                    sharedData->IterationsNeeded = iterations;
-                  
+                    sharedData->IterationsNeeded = sharedData->TotalNumberOfIterations;
+                   
                     sem_post(mutex);
 
                     
@@ -215,13 +213,18 @@ int main(int argc, char *argv[]) {
                     pause();
                     
                 }
-                else if (mutatedDistance == newBestDistance){
+                else if(mutatedDistance == newBestDistance) {
                     sem_wait(mutex);
-                    sharedData->numTimesBestPathFound++;
-                    sem_post(mutex);
+                     sharedData -> numTimesBestPathFound++;
+                     sem_post(mutex);
                 }
+           
+                sem_wait(mutex);
+                    sharedData->TotalNumberOfIterations++;
+                sem_post(mutex);
                 iterations++;
             }
+           
             exit(0);
         } else if (pid < 0) {
             
@@ -248,7 +251,8 @@ int main(int argc, char *argv[]) {
      }
     printf("\nValor do Caminho: %d" , sharedData->bestDistance );
     printf("\nIterações necessarias: %d" , sharedData->IterationsNeeded + 1 );
-    printf("\nNumero de vezes econtrado: %d" , sharedData->numTimesBestPathFound + 1);
+    printf("\nNumero de vezes encontrado: %d" , sharedData->numTimesBestPathFound + 1);
+    printf("\nNumero de total de Iteracoes: %d" , sharedData->TotalNumberOfIterations + 1);
     printf("\nTempo necessario: %ld.%06ld s", (long)sharedData->timeToBestPath.tv_sec, (long)sharedData->timeToBestPath.tv_usec);
     printf("\n------------------------------------------------------------\n");
 

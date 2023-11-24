@@ -22,6 +22,7 @@ struct SharedData {
     int bestDistance;
     int IterationsNeeded;
     int numTimesBestPathFound;
+    int TotalNumberOfIterations;
     struct timeval timeToBestPath;
 };
 
@@ -125,14 +126,15 @@ int main(int argc, char *argv[]) {
             
             //Variaveis Locais
             int iterations = 0;
+            int Local_numTimesBestPathFound = 0;
             struct timeval tvi , tvf , tv_res;
             int newBestDistance = INT_MAX;
             gettimeofday(&tvi , NULL);
 
-
+            srand(time(NULL));
             time_t startTime = time(NULL); // Começar a contagem do tempo definido
             while (1) {
-              
+                
                 int randomPath[size];  //Começar um novo caminho aleatorio
                 initializeRandomPath(randomPath);  
                 int mutatedDistance = getDistance(randomPath);//Obter o seu valor de percorrer esse caminho
@@ -150,20 +152,21 @@ int main(int argc, char *argv[]) {
                     gettimeofday(&tvf , NULL);
                     timersub(&tvf, &tvi, &tv_res);
                     sharedData->timeToBestPath = tv_res;
-                    sharedData->IterationsNeeded = iterations;
+                    sharedData->IterationsNeeded = sharedData->TotalNumberOfIterations;
                     sem_post(mutex);
                 }
                 //Caso a distancia percorrida do novo caminho seja igual ao melhor então vamos incrementar na memoria partilhada
-                else if(mutatedDistance == newBestDistance){
-                    sem_wait(mutex);
-                    sharedData->numTimesBestPathFound++;
-                    sem_post(mutex);
+                else if(mutatedDistance == newBestDistance) {
+                     sem_wait(mutex);
+                     sharedData -> numTimesBestPathFound++;
+                     sem_post(mutex);
                 }
-                  
+                sem_wait(mutex);
+                    sharedData->TotalNumberOfIterations++;
+                sem_post(mutex);
                 iterations++;
                 time_t currentTime = time(NULL);
                 if (currentTime - startTime >= timeLimit) {
-                    printf("Tempo limite excedido. A interromper interações...\n");
                     break;
                 }
             }
@@ -187,6 +190,7 @@ int main(int argc, char *argv[]) {
     printf("\nValor do Caminho: %d" , sharedData->bestDistance );
     printf("\nIterações necessarias: %d" , sharedData->IterationsNeeded + 1 );
     printf("\nNumero de vezes econtrado: %d" , sharedData->numTimesBestPathFound + 1);
+    printf("\nNumero de total de Iteracoes: %d" , sharedData->TotalNumberOfIterations + 1);
     printf("\nTempo necessario: %ld.%06ld s", (long)sharedData->timeToBestPath.tv_sec, (long)sharedData->timeToBestPath.tv_usec);
     printf("\n-----------------------------------\n");
     return 0;
