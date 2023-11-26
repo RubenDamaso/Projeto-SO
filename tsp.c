@@ -50,6 +50,18 @@ void initializeRandomPath(int path[]) {
         path[j] = temp;
     }
 }
+void exchangeMutation(int path[]) {
+    int pos1 = rand() % size;
+    int pos2;
+    do {
+        pos2 = rand() % size;
+    } while (pos1 == pos2);
+
+ 
+    int temp = path[pos1];
+    path[pos1] = path[pos2];
+    path[pos2] = temp;
+}
 
 //Obter a Matrix do Ficheiro de Texto
 void getMatrix(const char *filename) {
@@ -125,18 +137,18 @@ int main(int argc, char *argv[]) {
         if (pid == 0) { // Código executado pelos processos filhos
             
             //Variaveis Locais
-            int iterations = 0;
-            int Local_numTimesBestPathFound = 0;
             struct timeval tvi , tvf , tv_res;
             int newBestDistance = INT_MAX;
             gettimeofday(&tvi , NULL);
 
             srand(time(NULL));
+            int randomPath[size];  //Começar um novo caminho aleatorio
+            initializeRandomPath(randomPath);
+
             time_t startTime = time(NULL); // Começar a contagem do tempo definido
             while (1) {
                 
-                int randomPath[size];  //Começar um novo caminho aleatorio
-                initializeRandomPath(randomPath);  
+                exchangeMutation(randomPath);
                 int mutatedDistance = getDistance(randomPath);//Obter o seu valor de percorrer esse caminho
                 
                 //Caso este seja menor em distancia que o melhor caminho  anterior então dentro daquele escopo é o melhor
@@ -164,7 +176,6 @@ int main(int argc, char *argv[]) {
                 sem_wait(mutex);
                     sharedData->TotalNumberOfIterations++;
                 sem_post(mutex);
-                iterations++;
                 time_t currentTime = time(NULL);
                 if (currentTime - startTime >= timeLimit) {
                     break;

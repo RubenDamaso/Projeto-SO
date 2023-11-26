@@ -46,7 +46,6 @@ void printMatrix() {
         printf("\n");
     }
 }
-
 //Obter um caminho aleatorio
 void initializeRandomPath(int path[]) {
     
@@ -63,7 +62,6 @@ void initializeRandomPath(int path[]) {
 
     
 }
-
 //Obter a Matrix do Ficheiro de Texto
 void getMatrix(const char *filename) {
     FILE *file = fopen(filename, "r");
@@ -100,22 +98,25 @@ int getDistance(int path[]) {
     totalDistance += matrix[path[size - 1] - 1][path[0] - 1];
     return totalDistance;
 }
+void exchangeMutation(int path[]) {
+    int pos1 = rand() % size;
+    int pos2;
+    do {
+        pos2 = rand() % size;
+    } while (pos1 == pos2);
 
+ 
+    int temp = path[pos1];
+    path[pos1] = path[pos2];
+    path[pos2] = temp;
+}
 //Função para tratamento de Sinais
 void signal_handler(int signal) {
 
     //Tratamento do Sinal enviado para o Pai
     if (signal == SIGUSR1) {
-     
-        for (int j = 0; j < numProcesses; j++) {
-            if (childPIDs[j] != getpid()) {
-                kill(childPIDs[j], SIGUSR2);
-            }
-        }
-          for (int j = 0; j < numProcesses; j++) {
-            if (childPIDs[j] != getpid()) {
-                kill(childPIDs[j], SIGCONT);
-            }
+        for (int j = 0; j < numProcesses; j++) {    
+            kill(childPIDs[j], SIGUSR2);
         }
     } else if (signal == SIGUSR2) { //Tratamento do Sinal enviado para os filhos atualizarem a sua distancia de referencia       
         sem_wait(mutex_2);
@@ -123,6 +124,7 @@ void signal_handler(int signal) {
         sem_post(mutex_2);
     }
 }
+
 
 //Função para tratamento do Alarm Signal
 void alarm_handler(int signal) {
@@ -185,19 +187,17 @@ int main(int argc, char *argv[]) {
         pid = fork();
         if (pid == 0) { // Código executado pelos processos filhos
              //Variaveis
-          
-            int iterations = 0;
-            
             struct timeval tvi , tvf , tv_res;
             gettimeofday(&tvi , NULL);
             
             srand(time(NULL));
+            int randomPath[size];
+            initializeRandomPath(randomPath);
 
             time_t startTime = time(NULL); // Começar a contagem do tempo definido
             while (!timeLimitReached) {
                
-                int randomPath[size];
-                initializeRandomPath(randomPath);
+                exchangeMutation(randomPath);
                 int mutatedDistance = getDistance(randomPath);
               
                 if (mutatedDistance < newBestDistance) {
@@ -223,11 +223,9 @@ int main(int argc, char *argv[]) {
                      sharedData -> numTimesBestPathFound++;
                      sem_post(mutex);
                 }
-           
                 sem_wait(mutex);
                     sharedData->TotalNumberOfIterations++;
                 sem_post(mutex);
-                iterations++;
             }
            
             exit(0);
