@@ -203,6 +203,7 @@ int main(int argc, char *argv[]) {
                 if (mutatedDistance < newBestDistance) {
                     sem_wait(mutex);
                     sharedData->bestDistance = mutatedDistance;
+                    
                     for (int i = 0; i < size; i++) {
                         sharedData->bestPath[i] = randomPath[i];
                     }   
