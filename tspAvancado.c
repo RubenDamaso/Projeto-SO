@@ -112,6 +112,11 @@ void signal_handler(int signal) {
                 kill(childPIDs[j], SIGUSR2);
             }
         }
+          for (int j = 0; j < numProcesses; j++) {
+            if (childPIDs[j] != getpid()) {
+                kill(childPIDs[j], SIGCONT);
+            }
+        }
     } else if (signal == SIGUSR2) { //Tratamento do Sinal enviado para os filhos atualizarem a sua distancia de referencia       
         sem_wait(mutex_2);
         newBestDistance = sharedData->bestDistance;
