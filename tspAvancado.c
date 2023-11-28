@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("--------------------------------------------------------------\n");
-    printf("Melhor Resultado\n");
+    printf("Melhor Resultado da matrix ( %s )\n" , filename);
     printf("-------------------------------------------------------------\n");
     printf("Melhor caminho encontrado:");
     for (int i = 0; i < size ; i++){
@@ -261,7 +261,7 @@ int main(int argc, char *argv[]) {
     sem_close(mutex_2);
     sem_unlink("mutex2");
     munmap(shmem, sizeMemory);
-    
+
     return 0;
 }
 
